@@ -38,6 +38,9 @@ dependencies:
   firebase_core: ^2.24.2
   firebase_messaging: ^14.9.0
 
+  # Email
+  mailer: ^6.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

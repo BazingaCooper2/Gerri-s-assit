@@ -11,6 +11,7 @@ import 'schedule_page.dart';
 import 'time_tracking_page.dart';
 import 'login_page.dart';
 import 'reports_page.dart'; // ✅ Added import
+import 'injury_report_form.dart'; // ✅ Added import for Injury Report Form
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -213,6 +214,18 @@ class _DashboardPageState extends State<DashboardPage> {
                             MaterialPageRoute(
                               builder: (context) => ReportsPage(
                                   employee: _employee!), // ✅ Navigate to reports
+                            ),
+                          );
+                        },
+                      ),
+                      _DashboardCard(
+                        title: 'Injury Report',
+                        icon: Icons.report,
+                        color: Colors.red,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const InjuryReportForm(),
                             ),
                           );
                         },
