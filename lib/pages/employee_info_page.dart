@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/employee.dart';
 import '../main.dart';
+import 'package:nurse_tracking_app/services/session.dart';
 
 class EmployeeInfoPage extends StatefulWidget {
   final Employee employee;
@@ -31,7 +31,7 @@ class _EmployeeInfoPageState extends State<EmployeeInfoPage> {
     _lastNameController = TextEditingController(text: _employee.lastName);
     _phoneController = TextEditingController(text: _employee.phone ?? '');
     _departmentController =
-        TextEditingController(text: _employee.department ?? '');
+        TextEditingController(text: _employee.designation ?? '');
   }
 
   Future<void> _updateEmployee() async {
@@ -42,19 +42,35 @@ class _EmployeeInfoPageState extends State<EmployeeInfoPage> {
         _isLoading = true;
       });
 
-      await supabase.from('employees').update({
+      final empId = await SessionManager.getEmpId();
+      if (empId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Session expired. Please login again.'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      await supabase.from('employee').update({
         'first_name': _firstNameController.text.trim(),
         'last_name': _lastNameController.text.trim(),
         'phone': _phoneController.text.trim(),
-        'department': _departmentController.text.trim(),
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', _employee.id);
+        'designation': _departmentController.text.trim(),
+      }).eq('emp_id', empId);
 
       // Reload employee data
       final response = await supabase
-          .from('employees')
-          .select()
-          .eq('id', _employee.id)
+          .from('employee')
+          .select('emp_id, first_name, last_name, designation, phone, email, address, status, skills, qualifications, image_url')
+          .eq('emp_id', empId)
           .single();
 
       setState(() {
@@ -143,9 +159,9 @@ class _EmployeeInfoPageState extends State<EmployeeInfoPage> {
         _InfoCard(
           title: 'Personal Information',
           children: [
-            _InfoRow(label: 'Employee ID', value: _employee.employeeId),
+            _InfoRow(label: 'Employee ID', value: _employee.empId.toString()),
             _InfoRow(label: 'Full Name', value: _employee.fullName),
-            _InfoRow(label: 'Email', value: _employee.email),
+            _InfoRow(label: 'Email', value: _employee.email ?? 'Not provided'),
             _InfoRow(label: 'Phone', value: _employee.phone ?? 'Not provided'),
           ],
         ),
@@ -153,16 +169,14 @@ class _EmployeeInfoPageState extends State<EmployeeInfoPage> {
         _InfoCard(
           title: 'Work Information',
           children: [
-            _InfoRow(label: 'Position', value: _employee.position),
             _InfoRow(
-                label: 'Department',
-                value: _employee.department ?? 'Not specified'),
+                label: 'Designation',
+                value: _employee.designation ?? 'Not specified'),
             _InfoRow(
-                label: 'Hire Date',
-                value: DateFormat('MMM dd, yyyy').format(_employee.hireDate)),
+                label: 'Address', value: _employee.address ?? 'Not specified'),
+            _InfoRow(label: 'Status', value: _employee.status ?? 'Unknown'),
             _InfoRow(
-                label: 'Status',
-                value: _employee.isActive ? 'Active' : 'Inactive'),
+                label: 'Skills', value: _employee.skills ?? 'Not specified'),
           ],
         ),
       ],
@@ -215,7 +229,7 @@ class _EmployeeInfoPageState extends State<EmployeeInfoPage> {
           TextFormField(
             controller: _departmentController,
             decoration: const InputDecoration(
-              labelText: 'Department',
+              labelText: 'Designation',
               border: OutlineInputBorder(),
             ),
           ),
@@ -234,7 +248,7 @@ class _EmployeeInfoPageState extends State<EmployeeInfoPage> {
                             _lastNameController.text = _employee.lastName;
                             _phoneController.text = _employee.phone ?? '';
                             _departmentController.text =
-                                _employee.department ?? '';
+                                _employee.designation ?? '';
                           });
                         },
                   child: const Text('Cancel'),

@@ -3,7 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../main.dart';
 import '../models/employee.dart';
-import '../models/time_log.dart';
+import '../models/shift.dart';
+import 'package:nurse_tracking_app/services/session.dart';
 
 class ReportsPage extends StatefulWidget {
   final Employee employee;
@@ -17,9 +18,11 @@ class ReportsPage extends StatefulWidget {
 class _ReportsPageState extends State<ReportsPage> {
   bool _loading = true;
   int _completed = 0;
-  int _rescheduled = 0;
+  int _inProgress = 0;
   int _cancelled = 0;
   double _totalHours = 0;
+  double _overtimeHours = 0;
+  double _monthlyHours = 0;
   double _vacationLeft = 0;
   double _vacationTaken = 0;
   List<double> _dailyHours = [];
@@ -34,51 +37,78 @@ class _ReportsPageState extends State<ReportsPage> {
   Future<void> _loadReports() async {
     try {
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final startOfMonth = DateFormat('yyyy-MM-dd')
+          .format(DateTime(DateTime.now().year, DateTime.now().month, 1));
 
-      final response = await supabase
-          .from('time_logs')
-          .select()
-          .eq('employee_id', widget.employee.id)
-          .gte('created_at', '${today}T00:00:00');
-
-      int completed = 0;
-      int rescheduled = 0;
-      int cancelled = 0;
-      double totalHours = 0;
-
-      for (final log in response) {
-        final timeLog = TimeLog.fromJson(log);
-        if (timeLog.totalHours != null) {
-          totalHours += timeLog.totalHours!;
+      final empId = await SessionManager.getEmpId();
+      if (empId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Session expired. Please login again.')),
+          );
         }
-        if (timeLog.clockOutTime != null) completed++;
+        setState(() {
+          _loading = false;
+        });
+        return;
       }
 
-      final schedules = await supabase
-          .from('schedules')
-          .select('status')
-          .eq('employee_id', widget.employee.id);
+      // Load shifts data
+      final shiftsResponse = await supabase
+          .from('shift')
+          .select()
+          .eq('emp_id', empId);
 
-      for (final s in schedules) {
-        switch (s['status']) {
-          case 'rescheduled':
-            rescheduled++;
+      int completed = 0;
+      int inProgress = 0;
+      int cancelled = 0;
+      double totalHours = 0;
+      double overtimeHours = 0;
+      double monthlyHours = 0;
+
+      for (final shiftData in shiftsResponse) {
+        final shift = Shift.fromJson(shiftData);
+
+        // Count by status
+        switch (shift.shiftStatus) {
+          case 'completed':
+            completed++;
+            break;
+          case 'in_progress':
+            inProgress++;
             break;
           case 'cancelled':
             cancelled++;
             break;
         }
+
+        // Calculate hours
+        if (shift.durationHours != null) {
+          totalHours += shift.durationHours!;
+
+          // Check if it's today's shift
+          if (shift.date != null && shift.date == today) {
+            if (shift.overtimeHours != null) {
+              overtimeHours += shift.overtimeHours!;
+            }
+          }
+
+          // Check if it's this month's shift
+          if (shift.date != null && shift.date!.compareTo(startOfMonth) >= 0) {
+            monthlyHours += shift.durationHours!;
+          }
+        }
       }
 
-      // Load daily hours for the past 7 days
+      // Load daily hours for the past 7 days from shifts
       final startDate = DateTime.now().subtract(const Duration(days: 7));
       final startDateStr = DateFormat('yyyy-MM-dd').format(startDate);
 
-      final weeklyLogs = await supabase
-          .from('time_logs')
+      final weeklyShifts = await supabase
+          .from('shift')
           .select()
-          .eq('employee_id', widget.employee.id)
-          .gte('created_at', '${startDateStr}T00:00:00');
+          .eq('emp_id', empId)
+          .gte('date', startDateStr);
 
       Map<String, double> dailyHoursMap = {};
       for (int i = 0; i < 7; i++) {
@@ -87,13 +117,12 @@ class _ReportsPageState extends State<ReportsPage> {
         dailyHoursMap[dateStr] = 0.0;
       }
 
-      for (final log in weeklyLogs) {
-        final timeLog = TimeLog.fromJson(log);
-        if (timeLog.totalHours != null) {
-          final dateStr = DateFormat('yyyy-MM-dd').format(timeLog.createdAt);
-          if (dailyHoursMap.containsKey(dateStr)) {
-            dailyHoursMap[dateStr] =
-                dailyHoursMap[dateStr]! + timeLog.totalHours!;
+      for (final shiftData in weeklyShifts) {
+        final shift = Shift.fromJson(shiftData);
+        if (shift.durationHours != null && shift.date != null) {
+          if (dailyHoursMap.containsKey(shift.date!)) {
+            dailyHoursMap[shift.date!] =
+                dailyHoursMap[shift.date!]! + shift.durationHours!;
           }
         }
       }
@@ -110,12 +139,13 @@ class _ReportsPageState extends State<ReportsPage> {
 
       setState(() {
         _completed = completed;
-        _rescheduled = rescheduled;
+        _inProgress = inProgress;
         _cancelled = cancelled;
         _totalHours = totalHours;
-        _vacationLeft = (widget.employee.totalVacationHours ?? 0) -
-            (widget.employee.usedVacationHours ?? 0);
-        _vacationTaken = widget.employee.usedVacationHours ?? 0;
+        _overtimeHours = overtimeHours;
+        _monthlyHours = monthlyHours;
+        _vacationLeft = 0.0;
+        _vacationTaken = 0.0;
         _dailyHours = dailyHours;
         _days = days;
         _loading = false;
@@ -143,12 +173,27 @@ class _ReportsPageState extends State<ReportsPage> {
                   Row(
                     children: [
                       _SummaryCard(
-                        title: "Hours of Client Service",
+                        title: "Total Hours Worked",
                         value: "${_totalHours.toStringAsFixed(2)} h",
                         color: Colors.blue,
                       ),
                       _SummaryCard(
-                        title: "Clients Served",
+                        title: "Overtime Hours Today",
+                        value: "${_overtimeHours.toStringAsFixed(2)} h",
+                        color: Colors.orange,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      _SummaryCard(
+                        title: "Monthly Hours",
+                        value: "${_monthlyHours.toStringAsFixed(2)} h",
+                        color: Colors.purple,
+                      ),
+                      _SummaryCard(
+                        title: "Completed Shifts",
                         value: "$_completed",
                         color: Colors.green,
                       ),
@@ -158,9 +203,9 @@ class _ReportsPageState extends State<ReportsPage> {
                   Row(
                     children: [
                       _SummaryCard(
-                        title: "Rescheduled",
-                        value: "$_rescheduled",
-                        color: Colors.purple,
+                        title: "In Progress",
+                        value: "$_inProgress",
+                        color: Colors.amber,
                       ),
                       _SummaryCard(
                         title: "Cancelled",
@@ -170,23 +215,10 @@ class _ReportsPageState extends State<ReportsPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      _SummaryCard(
-                        title: "Vacation Days Left",
-                        value: "${(_vacationLeft / 8).toStringAsFixed(0)} days",
-                        color: Colors.orange,
-                      ),
-                      _SummaryCard(
-                        title: "Hours of Leave Taken",
-                        value: "${(_vacationTaken / 8).toStringAsFixed(2)} h",
-                        color: Colors.teal,
-                      ),
-                    ],
-                  ),
+                  const SizedBox.shrink(),
                   const SizedBox(height: 24),
                   const Text(
-                    'Schedule Status Distribution',
+                    'Shift Status Distribution',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
@@ -243,7 +275,7 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   List<PieChartSectionData> _getPieSections() {
-    final total = _completed + _rescheduled + _cancelled;
+    final total = _completed + _inProgress + _cancelled;
     if (total == 0) return [];
     return [
       PieChartSectionData(
@@ -253,9 +285,9 @@ class _ReportsPageState extends State<ReportsPage> {
         radius: 50,
       ),
       PieChartSectionData(
-        value: _rescheduled.toDouble(),
-        title: 'Rescheduled\n$_rescheduled',
-        color: Colors.purple,
+        value: _inProgress.toDouble(),
+        title: 'In Progress\n$_inProgress',
+        color: Colors.amber,
         radius: 50,
       ),
       PieChartSectionData(

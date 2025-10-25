@@ -5,9 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
 import '../models/employee.dart';
 import '../providers/theme_provider.dart';
-import 'employee_setup_page.dart';
+import 'package:nurse_tracking_app/services/session.dart';
 import 'employee_info_page.dart';
-import 'schedule_page.dart';
+import 'shift_page.dart';
 import 'time_tracking_page.dart';
 import 'login_page.dart';
 import 'reports_page.dart'; // ✅ Added import
@@ -32,29 +32,39 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _loadEmployeeData() async {
     try {
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
-
-      final response = await supabase
-          .from('employees')
-          .select()
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (response == null) {
-        // No profile found, redirect to setup page
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const EmployeeSetupPage()),
-          );
-        }
+      final empId = await SessionManager.getEmpId();
+      if (empId == null) {
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
 
-      setState(() {
-        _employee = Employee.fromJson(response);
-        _isLoading = false;
-      });
+      final response = await supabase
+          .from('employee')
+          .select()
+          .eq('emp_id', empId)
+          .maybeSingle();
+
+      if (response != null) {
+        setState(() {
+          _employee = Employee.fromJson(response);
+          _isLoading = false;
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Employee profile not found'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() {
+          _isLoading = false;
+        });
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -73,7 +83,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _signOut() async {
     try {
-      await supabase.auth.signOut();
+      await SessionManager.clearSession();
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -181,13 +191,13 @@ class _DashboardPageState extends State<DashboardPage> {
                         },
                       ),
                       _DashboardCard(
-                        title: 'Schedule',
+                        title: 'Shifts',
                         icon: Icons.calendar_today,
                         color: Colors.green,
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => SchedulePage(employee: _employee!),
+                              builder: (context) => ShiftPage(employee: _employee!),
                             ),
                           );
                         },

@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nurse_tracking_app/main.dart';
 import 'package:nurse_tracking_app/pages/dashboard_page.dart';
-import 'package:nurse_tracking_app/pages/employee_setup_page.dart';
+import 'package:nurse_tracking_app/services/session.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -14,93 +13,60 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
-  bool _redirecting = false;
   late final TextEditingController _emailController = TextEditingController();
   late final TextEditingController _passwordController =
       TextEditingController();
-  late final StreamSubscription<AuthState> _authStateSubscription;
 
   Future<void> _signIn() async {
     try {
-      setState(() {
-        _isLoading = true;
-      });
+      setState(() => _isLoading = true);
 
-      final response = await supabase.auth.signInWithPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
+      final email = _emailController.text.trim().toLowerCase();
+      final password = _passwordController.text.trim();
 
-      final user = response.user;
+      print('🔍 Attempting login for: $email');
 
-      if (mounted && user != null) {
-        // ✅ Check if employee profile exists
-        final employeeData = await supabase
-            .from('employees')
-            .select()
-            .eq('user_id', user.id)
-            .maybeSingle();
+      final response = await supabase
+          .from('employee')
+          .select(
+              'emp_id, first_name, last_name, email, password, designation, image_url, status')
+          .ilike('email', email) // case-insensitive email match
+          .eq('password', password)
+          .maybeSingle();
 
-        if (employeeData == null) {
-          // ✅ Insert default employee profile
-          await supabase.from('employees').insert({
-            'user_id': user.id,
-            'employee_id': 'EMP-${DateTime.now().millisecondsSinceEpoch}',
-            'first_name': 'John',
-            'last_name': 'Doe',
-            'email': user.email,
-          });
+      print('🧾 Supabase response: $response');
 
-          // ✅ Redirect to employee setup page
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                  builder: (context) => const EmployeeSetupPage()),
-            );
-          }
-        } else {
-          // ✅ Redirect to dashboard
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const DashboardPage()),
-            );
-          }
+      if (!mounted) return;
+
+      if (response != null) {
+        // Save session with the response data
+        await SessionManager.saveSession(response);
+
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const DashboardPage()),
+          );
         }
+      } else {
+        context.showSnackBar('Invalid email or password', isError: true);
       }
-    } on AuthException catch (error) {
-      if (mounted) context.showSnackBar(error.message, isError: true);
-    } catch (error) {
+    } catch (error, stack) {
+      print('❌ Login error: $error');
+      print(stack);
       if (mounted) {
         context.showSnackBar('Unexpected error occurred', isError: true);
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
-  }
-
-  @override
-  void initState() {
-    _authStateSubscription = supabase.auth.onAuthStateChange.listen(
-      (data) {
-        if (_redirecting) return;
-        final session = data.session;
-        if (session != null) {
-          _redirecting = true;
-        }
-      },
-    );
-    super.initState();
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _authStateSubscription.cancel();
     super.dispose();
   }
 
@@ -114,11 +80,8 @@ class _LoginPageState extends State<LoginPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(
-                Icons.local_hospital,
-                size: 80,
-                color: Theme.of(context).primaryColor,
-              ),
+              Icon(Icons.local_hospital,
+                  size: 80, color: Theme.of(context).primaryColor),
               const SizedBox(height: 24),
               Text(
                 "Gerri's Assistance",
@@ -132,9 +95,10 @@ class _LoginPageState extends State<LoginPage> {
               Text(
                 'Hospital Home Care Management',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Colors.grey[600]),
               ),
               const SizedBox(height: 48),
               TextFormField(

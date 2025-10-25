@@ -1,6 +1,6 @@
 class TimeLog {
   final String id;
-  final String employeeId;
+  final int empId;
   final String? scheduleId;
   final DateTime? clockInTime;
   final DateTime? clockOutTime;
@@ -16,7 +16,7 @@ class TimeLog {
 
   TimeLog({
     required this.id,
-    required this.employeeId,
+    required this.empId,
     required this.scheduleId,
     this.clockInTime,
     this.clockOutTime,
@@ -34,7 +34,7 @@ class TimeLog {
   factory TimeLog.fromJson(Map<String, dynamic> json) {
     return TimeLog(
       id: json['id'],
-      employeeId: json['employee_id'],
+      empId: json['emp_id'],
       scheduleId: json['schedule_id'],
       clockInTime: json['clock_in_time'] != null
           ? DateTime.parse(json['clock_in_time'])

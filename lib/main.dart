@@ -54,6 +54,11 @@ Future<void> main() async {
           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzYmZoeGRvbXZjbHdzcmVrZHhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzMjI3OTUsImV4cCI6MjA2OTg5ODc5NX0.0VzbWIc-uxIDhI03g04n8HSPRQ_p01UTJQ1sg8ggigU',
     );
 
+    // Health check before running app
+    final supabase = Supabase.instance.client;
+    final test = await supabase.from('employee').select('email').limit(1);
+    print('🩺 Supabase health check → Found employees: $test');
+
     // ✅ Initialize local notifications
     await initLocalNotifs();
 

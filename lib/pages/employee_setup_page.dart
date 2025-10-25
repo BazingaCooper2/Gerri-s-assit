@@ -40,15 +40,13 @@ class _EmployeeSetupPageState extends State<EmployeeSetupPage> {
       final user = supabase.auth.currentUser;
       if (user == null) throw Exception('No authenticated user');
 
-      await supabase.from('employees').insert({
-        'user_id': user.id,
-        'employee_id': _employeeIdController.text.trim(),
+      await supabase.from('employee').insert({
         'first_name': _firstNameController.text.trim(),
         'last_name': _lastNameController.text.trim(),
         'email': user.email,
         'phone': _phoneController.text.trim(),
-        'position': _selectedPosition,
-        'department': _departmentController.text.trim(),
+        'designation': _selectedPosition,
+        'password': 'defaultpassword', // TODO: Add password field to form
       });
 
       if (mounted) {
